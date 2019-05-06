@@ -128,6 +128,7 @@ class CMRESHandler(logging.Handler):
                  aws_access_key=__DEFAULT_AWS_ACCESS_KEY,
                  aws_secret_key=__DEFAULT_AWS_SECRET_KEY,
                  aws_region=__DEFAULT_AWS_REGION,
+                 aws_token=None,
                  auth_type=__DEFAULT_AUTH_TYPE,
                  use_ssl=__DEFAULT_USE_SSL,
                  verify_ssl=__DEFAULT_VERIFY_SSL,
@@ -175,12 +176,12 @@ class CMRESHandler(logging.Handler):
         :return: A ready to be used CMRESHandler.
         """
         logging.Handler.__init__(self)
-
         self.hosts = hosts
         self.auth_details = auth_details
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
         self.aws_region = aws_region
+        self.aws_token = aws_token
         self.auth_type = auth_type
         self.use_ssl = use_ssl
         self.verify_certs = verify_ssl
@@ -191,7 +192,7 @@ class CMRESHandler(logging.Handler):
         self.es_doc_type = es_doc_type
         self.es_additional_fields = es_additional_fields.copy()
         self.es_additional_fields.update({'host': socket.gethostname(),
-                                          'host_ip': socket.gethostbyname(socket.gethostname())})
+                                          'host_ip': self.__get_host_ip()})
         self.raise_on_indexing_exceptions = raise_on_indexing_exceptions
         self.default_timestamp_field_name = default_timestamp_field_name
 
@@ -201,6 +202,18 @@ class CMRESHandler(logging.Handler):
         self._timer = None
         self._index_name_func = CMRESHandler._INDEX_FREQUENCY_FUNCION_DICT[self.index_name_frequency]
         self.serializer = CMRESSerializer()
+        
+    def __get_host_ip(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            # doesn't even have to be reachable
+            s.connect(('10.255.255.255', 1))
+            IP = s.getsockname()[0]
+        except:
+            IP = '127.0.0.1'
+        finally:
+            s.close()
+        return IP
 
     def __schedule_flush(self):
         if self._timer is None:
@@ -243,7 +256,7 @@ class CMRESHandler(logging.Handler):
             if not AWS4AUTH_SUPPORTED:
                 raise EnvironmentError("AWS4Auth not available. Please install \"requests-aws4auth\"")
             if self._client is None:
-                awsauth = AWS4Auth(self.aws_access_key, self.aws_secret_key, self.aws_region, 'es')
+                awsauth = AWS4Auth(self.aws_access_key, self.aws_secret_key, self.aws_region, 'es',session_token=self.aws_token)
                 self._client = Elasticsearch(
                     hosts=self.hosts,
                     http_auth=awsauth,
